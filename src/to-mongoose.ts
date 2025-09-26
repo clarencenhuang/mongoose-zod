@@ -18,9 +18,9 @@ import {getValidEnumValues, tryImportModule} from './utils.js';
 import {
   type SchemaFeatures,
   getSchemaDef,
-  isZodType,
-  isZodEnum,
   getZodEnumEntries,
+  isZodEnum,
+  isZodType,
   unwrapZodSchema,
   zodInstanceofOriginalClasses,
 } from './zod-helpers.js';
@@ -266,7 +266,7 @@ const addMongooseSchemaFields = (
         return {kind: 'invalid', reason: 'enum definition is missing'};
       }
       const enumValues = getValidEnumValues(entries);
-      const rawValues = Object.values(entries ?? {});
+      const rawValues = Object.values(entries);
       if (enumValues.length === 0) {
         return {kind: 'invalid', reason: 'only nonempty enums with string or number values are supported'};
       }
@@ -327,7 +327,7 @@ const addMongooseSchemaFields = (
 
     const invalidAnalysis = analyses.find((analysis) => analysis.kind === 'invalid');
 
-    if (!errMsgAddendum && invalidAnalysis && invalidAnalysis.kind === 'invalid') {
+    if (!errMsgAddendum && invalidAnalysis) {
       errMsgAddendum = invalidAnalysis.reason;
     } else if (!errMsgAddendum) {
       const kinds = new Set(analyses.map((analysis) => analysis.kind));
@@ -348,17 +348,11 @@ const addMongooseSchemaFields = (
     fieldType = MongooseMixed;
   } else if (isZodType(zodSchemaFinal, 'ZodMap')) {
     fieldType = Map;
-  } else if (isZodType(zodSchemaFinal, 'ZodAny')) {
+  } else if (isZodType(zodSchemaFinal, 'ZodAny') || isZodType(zodSchemaFinal, 'ZodType')) {
     const instanceOfClass = zodInstanceofOriginalClasses.get(zodSchemaFinal);
     fieldType = instanceOfClass || MongooseMixed;
     // When using .lean(), it returns the inner representation of buffer fields, i.e.
     // instances of `mongo.Binary`. We can fix this with the getter that actually returns buffers
-    if (instanceOfClass === M.Schema.Types.Buffer && !('get' in commonFieldOptions)) {
-      commonFieldOptions.get = bufferMongooseGetter;
-    }
-  } else if (isZodType(zodSchemaFinal, 'ZodType')) {
-    const instanceOfClass = zodInstanceofOriginalClasses.get(zodSchemaFinal);
-    fieldType = instanceOfClass || MongooseMixed;
     if (instanceOfClass === M.Schema.Types.Buffer && !('get' in commonFieldOptions)) {
       commonFieldOptions.get = bufferMongooseGetter;
     }

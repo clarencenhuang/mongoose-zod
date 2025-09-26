@@ -51,7 +51,7 @@ const typeNameMap: Record<string, string> = {
 };
 
 export const isZodType = (schema: ZodTypeAny, typeName: string) => {
-  const ctorName = schema?.constructor?.name;
+  const ctorName = schema.constructor.name;
   if (ctorName === typeName) {
     return true;
   }
@@ -59,7 +59,7 @@ export const isZodType = (schema: ZodTypeAny, typeName: string) => {
   return defType === (typeNameMap[typeName] ?? typeName);
 };
 
-export const isZodEnum = (schema: ZodTypeAny): boolean => schema?.constructor?.name === 'ZodEnum';
+export const isZodEnum = (schema: ZodTypeAny): boolean => schema.constructor.name === 'ZodEnum';
 
 export const getZodEnumEntries = (
   schema: ZodTypeAny,
@@ -67,7 +67,7 @@ export const getZodEnumEntries = (
   if (!isZodEnum(schema)) {
     return undefined;
   }
-  const entries = getSchemaDef(schema).entries;
+  const {entries} = getSchemaDef(schema);
   return entries && typeof entries === 'object' ? (entries as Record<string, string | number>) : undefined;
 };
 

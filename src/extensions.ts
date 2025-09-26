@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/prefer-function-type */
 import type {SchemaOptions, SchemaTypeOptions} from 'mongoose';
-import {type ZodObject, z, core} from 'zod';
+import {type ZodObject, z} from 'zod';
 import type {PartialLaconic} from './types.js';
 
 export const MongooseTypeOptionsSymbol = Symbol.for('MongooseTypeOptions');
@@ -23,9 +23,22 @@ export interface MongooseMetadata<
   >;
 }
 
-type AnyZodType = z.ZodTypeAny;
+type BaseZodCustom<
+  ZodType extends z.ZodTypeAny,
+  DocType,
+  TVirtuals extends {} = {},
+> = z.ZodCustom<DocType & PartialLaconic<TVirtuals>, z.input<ZodType>>;
 
-type ZodTypeInternals<T extends AnyZodType = AnyZodType> = T extends z.ZodType<any, any, infer I> ? I : never;
+type BaseZodInternals<
+  ZodType extends z.ZodTypeAny,
+  DocType,
+  TVirtuals extends {} = {},
+> = BaseZodCustom<ZodType, DocType, TVirtuals>['_zod'];
+
+const getInternalDef = (schema: z.ZodTypeAny): Record<PropertyKey, unknown> =>
+  ((schema as unknown as { _zod?: { def?: Record<PropertyKey, unknown> }; _def?: Record<PropertyKey, unknown> })._zod?.def ??
+    (schema as unknown as { _def?: Record<PropertyKey, unknown> })._def ??
+    ({} as Record<PropertyKey, unknown>));
 
 export interface ZodMongoose<
   ZodType extends z.ZodTypeAny,
@@ -35,19 +48,20 @@ export interface ZodMongoose<
   TStaticMethods extends {} = {},
   TVirtuals extends {} = {},
 > extends z.ZodType<DocType & PartialLaconic<TVirtuals>, z.input<ZodType>> {
-  _zod: core.$ZodCustomInternals<DocType & PartialLaconic<TVirtuals>, z.input<ZodType>> & {
-    def: core.$ZodCustomDef<DocType & PartialLaconic<TVirtuals>> & {
+  _zod: BaseZodInternals<ZodType, DocType, TVirtuals> & {
+    def: BaseZodInternals<ZodType, DocType, TVirtuals>['def'] & {
       mongoose: MongooseMetadata<DocType, TInstanceMethods, QueryHelpers, TStaticMethods, TVirtuals>;
       innerType: ZodType;
     };
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 class ZodMongooseClass {}
 
-type ZodMongooseConstructor = {
-  new (...args: any[]): ZodMongoose<z.ZodTypeAny, unknown>;
-  create<
+interface ZodMongooseConstructor {
+  new (...args: unknown[]): ZodMongoose<z.ZodTypeAny, unknown>;
+  create: <
     ZT extends z.ZodObject<any>,
     DocType,
     TInstanceMethods extends {} = {},
@@ -59,8 +73,8 @@ type ZodMongooseConstructor = {
       innerType: ZT;
       mongoose: MongooseMetadata<DocType, TInstanceMethods, QueryHelpers, TStaticMethods, TVirtuals>;
     },
-  ): ZodMongoose<ZT, DocType, TInstanceMethods, QueryHelpers, TStaticMethods, TVirtuals>;
-};
+  ) => ZodMongoose<ZT, DocType, TInstanceMethods, QueryHelpers, TStaticMethods, TVirtuals>;
+}
 
 const ensureZodMongoosePrototype = (() => {
   let isInitialized = false;
@@ -102,6 +116,7 @@ const createZodMongoose = <
   return schema as ZodMongoose<ZT, DocType, TInstanceMethods, QueryHelpers, TStaticMethods, TVirtuals>;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-redeclare
 export const ZodMongoose = ZodMongooseClass as unknown as ZodMongooseConstructor;
 
 ZodMongoose.create = (def) => createZodMongoose(def);
@@ -226,7 +241,3 @@ declare module 'mongoose' {
 }
 
 export {z} from 'zod';
-const getInternalDef = (schema: z.ZodTypeAny) =>
-  ((schema as unknown as { _zod?: { def?: Record<PropertyKey, unknown> }; _def?: Record<PropertyKey, unknown> })._zod?.def ??
-    (schema as unknown as { _def?: Record<PropertyKey, unknown> })._def ??
-    ({} as Record<PropertyKey, unknown>));
