@@ -279,7 +279,8 @@ const addMongooseSchemaFields = (
         return {kind: 'invalid', reason: 'enum values must be strings or numbers'};
       }
 
-      const valueTypes = new Set(enumValues.map((value) => typeof value));
+      const typedEnumValues = enumValues as (string | number)[];
+      const valueTypes = new Set(typedEnumValues.map((value) => typeof value));
       if (valueTypes.size === 1) {
         const [valueType] = [...valueTypes];
         if (
@@ -289,8 +290,8 @@ const addMongooseSchemaFields = (
           return {kind: 'invalid', reason: 'only native enums can mix string and number values'};
         }
         return valueType === 'string'
-          ? {kind: 'string', values: enumValues}
-          : {kind: 'number', values: enumValues};
+          ? {kind: 'string', values: typedEnumValues}
+          : {kind: 'number', values: typedEnumValues};
       }
 
       // Mixed string/number enums are only supported for native enums which include reverse numeric lookups
@@ -312,7 +313,7 @@ const addMongooseSchemaFields = (
       });
 
       if (hasReverseNumericLookup && hasForwardNumericLookup) {
-        return {kind: 'mixed-native', values: enumValues};
+        return {kind: 'mixed-native', values: typedEnumValues};
       }
 
       return {kind: 'invalid', reason: 'only native enums can mix string and number values'};
