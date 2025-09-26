@@ -70,7 +70,7 @@ describe('Plugins', () => {
           schemaOptions: {
             virtuals: {
               u: {
-                get() {
+                get(this: {username?: string}) {
                   return this.username;
                 },
               },
@@ -217,7 +217,7 @@ describe('Plugins', () => {
         z.object({username: z.string()}).mongoose({
           typeOptions: {
             username: {
-              get(value) {
+              get(value: string) {
                 return value.toUpperCase();
               },
             },

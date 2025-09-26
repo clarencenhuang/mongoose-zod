@@ -17,7 +17,10 @@ import {setupState} from './setup.js';
 import {getValidEnumValues, tryImportModule} from './utils.js';
 import {
   type SchemaFeatures,
+  getSchemaDef,
   isZodType,
+  isZodEnum,
+  getZodEnumEntries,
   unwrapZodSchema,
   zodInstanceofOriginalClasses,
 } from './zod-helpers.js';
@@ -77,6 +80,7 @@ const addMongooseSchemaFields = (
   };
 
   const {schema: zodSchemaFinal, features: schemaFeatures} = unwrapZodSchema(zodSchema);
+  const zodSchemaFinalDef = getSchemaDef(zodSchemaFinal);
   const monMetadata = schemaFeatures.mongoose || {};
 
   const {
@@ -186,7 +190,8 @@ const addMongooseSchemaFields = (
             ...monMetadata.schemaOptions,
           },
         );
-    for (const [key, S] of Object.entries(zodSchemaFinal._def.shape()) as [string, ZodSchema][]) {
+    const objectShape = (zodSchemaFinal as z.ZodObject<any>).shape;
+    for (const [key, S] of Object.entries(objectShape) as [string, z.ZodTypeAny][]) {
       addMongooseSchemaFields(S, relevantSchema, {
         ...context,
         fieldsStack: [...fieldsStack, key],
@@ -210,7 +215,8 @@ const addMongooseSchemaFields = (
   } else if (isZodType(zodSchemaFinal, 'ZodBoolean') || unionSchemaType === 'ZodBoolean') {
     fieldType = MongooseZodBoolean;
   } else if (isZodType(zodSchemaFinal, 'ZodLiteral')) {
-    const literalValue = zodSchemaFinal._def.value;
+    const literalValues = zodSchemaFinalDef.values as unknown[] | undefined;
+    const literalValue = literalValues?.[0];
     const literalJsType = typeof literalValue;
     switch (literalJsType) {
       case 'boolean': {
@@ -240,31 +246,102 @@ const addMongooseSchemaFields = (
         errMsgAddendum = 'only boolean, number, string or null literals are supported';
       }
     }
-  } else if (isZodType(zodSchemaFinal, 'ZodEnum')) {
-    const enumValues = zodSchemaFinal._def.values;
-    if (
-      Array.isArray(enumValues) &&
-      enumValues.length > 0 &&
-      enumValues.every((v) => typeof v === 'string')
-    ) {
-      fieldType = MongooseZodString;
-    } else {
-      errMsgAddendum = 'only nonempty zod enums with string values are supported';
+  } else if (isZodEnum(zodSchemaFinal) || unionSchemaType === 'ZodEnum') {
+    const unionOptions = Array.isArray(zodSchemaFinalDef.options)
+      ? (zodSchemaFinalDef.options as z.ZodTypeAny[])
+      : [];
+    const enumSchemas = isZodEnum(zodSchemaFinal)
+      ? [zodSchemaFinal as z.ZodTypeAny]
+      : unionOptions.filter(isZodEnum);
+
+    type EnumSchemaAnalysis =
+      | {kind: 'string'; values: (string | number)[]}
+      | {kind: 'number'; values: (string | number)[]}
+      | {kind: 'mixed-native'; values: (string | number)[]}
+      | {kind: 'invalid'; reason: string};
+
+    const analyzeEnumSchema = (schema: z.ZodTypeAny): EnumSchemaAnalysis => {
+      const entries = getZodEnumEntries(schema);
+      if (!entries) {
+        return {kind: 'invalid', reason: 'enum definition is missing'};
+      }
+      const enumValues = getValidEnumValues(entries);
+      const rawValues = Object.values(entries ?? {});
+      if (enumValues.length === 0) {
+        return {kind: 'invalid', reason: 'only nonempty enums with string or number values are supported'};
+      }
+
+      const invalidValue = enumValues.find((value) => {
+        const valueType = typeof value;
+        return valueType !== 'string' && valueType !== 'number';
+      });
+      if (invalidValue !== undefined) {
+        return {kind: 'invalid', reason: 'enum values must be strings or numbers'};
+      }
+
+      const valueTypes = new Set(enumValues.map((value) => typeof value));
+      if (valueTypes.size === 1) {
+        const [valueType] = [...valueTypes];
+        if (
+          valueType === 'string' &&
+          rawValues.some((rawValue) => typeof rawValue === 'number')
+        ) {
+          return {kind: 'invalid', reason: 'only native enums can mix string and number values'};
+        }
+        return valueType === 'string'
+          ? {kind: 'string', values: enumValues}
+          : {kind: 'number', values: enumValues};
+      }
+
+      // Mixed string/number enums are only supported for native enums which include reverse numeric lookups
+      const hasReverseNumericLookup = Object.entries(entries).some(([key, value]) => {
+        if (key === '') {
+          return false;
+        }
+        const parsedKey = Number(key);
+        return (
+          Number.isInteger(parsedKey) &&
+          String(parsedKey) === key &&
+          typeof value === 'string' &&
+          value !== key
+        );
+      });
+
+      const hasForwardNumericLookup = Object.entries(entries).some(([key, value]) => {
+        return Number.isNaN(Number(key)) && typeof value === 'number';
+      });
+
+      if (hasReverseNumericLookup && hasForwardNumericLookup) {
+        return {kind: 'mixed-native', values: enumValues};
+      }
+
+      return {kind: 'invalid', reason: 'only native enums can mix string and number values'};
+    };
+
+    const analyses = enumSchemas.map(analyzeEnumSchema);
+
+    if (analyses.length === 0) {
+      errMsgAddendum = 'enum definition is missing';
     }
-  } else if (isZodType(zodSchemaFinal, 'ZodNativeEnum')) {
-    const enumValues = getValidEnumValues(zodSchemaFinal._def.values);
-    const valuesJsTypes = [...new Set(enumValues.map((v) => typeof v))];
-    if (valuesJsTypes.length === 1 && valuesJsTypes[0] === 'number') {
-      fieldType = MongooseZodNumber;
-    } else if (valuesJsTypes.length === 1 && valuesJsTypes[0] === 'string') {
-      fieldType = MongooseZodString;
-    } else if (
-      valuesJsTypes.length === 2 &&
-      (['string', 'number'] as const).every((t) => valuesJsTypes.includes(t))
-    ) {
-      fieldType = MongooseMixed;
-    } else {
-      errMsgAddendum = 'only nonempty native enums with number and strings values are supported';
+
+    const invalidAnalysis = analyses.find((analysis) => analysis.kind === 'invalid');
+
+    if (!errMsgAddendum && invalidAnalysis && invalidAnalysis.kind === 'invalid') {
+      errMsgAddendum = invalidAnalysis.reason;
+    } else if (!errMsgAddendum) {
+      const kinds = new Set(analyses.map((analysis) => analysis.kind));
+
+      if (kinds.size === 1 && kinds.has('string')) {
+        fieldType = MongooseZodString;
+      } else if (kinds.size === 1 && kinds.has('number')) {
+        fieldType = MongooseZodNumber;
+      } else if (kinds.size === 1 && kinds.has('mixed-native')) {
+        fieldType = MongooseMixed;
+      } else if (kinds.has('mixed-native') || (kinds.has('string') && kinds.has('number'))) {
+        fieldType = MongooseMixed;
+      } else {
+        errMsgAddendum = 'enum values must be strings or numbers';
+      }
     }
   } else if (isZodType(zodSchema, 'ZodNaN') || isZodType(zodSchema, 'ZodNull')) {
     fieldType = MongooseMixed;
@@ -278,10 +355,11 @@ const addMongooseSchemaFields = (
     if (instanceOfClass === M.Schema.Types.Buffer && !('get' in commonFieldOptions)) {
       commonFieldOptions.get = bufferMongooseGetter;
     }
-  } else if (isZodType(zodSchemaFinal, 'ZodEffects')) {
-    // `refinement` effects are already unwrapped at this stage
-    if (zodSchemaFinal._def.effect.type !== 'refinement') {
-      errMsgAddendum = 'only refinements are supported';
+  } else if (isZodType(zodSchemaFinal, 'ZodType')) {
+    const instanceOfClass = zodInstanceofOriginalClasses.get(zodSchemaFinal);
+    fieldType = instanceOfClass || MongooseMixed;
+    if (instanceOfClass === M.Schema.Types.Buffer && !('get' in commonFieldOptions)) {
+      commonFieldOptions.get = bufferMongooseGetter;
     }
   } else if (
     isZodType(zodSchemaFinal, 'ZodUnknown') ||
@@ -290,8 +368,7 @@ const addMongooseSchemaFields = (
     isZodType(zodSchemaFinal, 'ZodTuple') ||
     isZodType(zodSchemaFinal, 'ZodDiscriminatedUnion') ||
     isZodType(zodSchemaFinal, 'ZodIntersection') ||
-    isZodType(zodSchemaFinal, 'ZodTypeAny') ||
-    isZodType(zodSchemaFinal, 'ZodType')
+    isZodType(zodSchemaFinal, 'ZodTypeAny')
   ) {
     fieldType = MongooseMixed;
   }
@@ -353,7 +430,10 @@ const addMongooseSchemaFields = (
         ? value.toObject()
         : value;
 
-    schemaToValidate.parse(valueToParse);
+    const normalizedValue =
+      valueToParse instanceof M.mongo.Binary ? valueToParse.buffer : valueToParse;
+
+    schemaToValidate.parse(normalizedValue);
 
     return true;
   });
@@ -390,8 +470,9 @@ export const toMongooseSchema = <Schema extends ZodMongoose<any, any>>(
 
   const {disablePlugins: dp, unknownKeys} = optionsFinal;
 
-  const metadata = rootZodSchema._def;
-  const schemaOptionsFromField = metadata.innerType._def?.[MongooseSchemaOptionsSymbol];
+  const metadata = getSchemaDef(rootZodSchema);
+  const innerTypeDef = metadata.innerType ? getSchemaDef(metadata.innerType) : undefined;
+  const schemaOptionsFromField = innerTypeDef?.[MongooseSchemaOptionsSymbol];
   const {schemaOptions} = metadata.mongoose;
 
   const addMLVPlugin = mlvPlugin && !isPluginDisabled('leanVirtuals', dp);

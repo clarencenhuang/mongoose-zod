@@ -3,6 +3,11 @@ import {z} from 'zod';
 import {MongooseZodError} from './errors.js';
 import {MongooseSchemaOptionsSymbol, type ZodMongoose} from './extensions.js';
 
+const getInternalDef = (schema: z.ZodTypeAny) =>
+  ((schema as unknown as { _zod?: { def?: Record<PropertyKey, unknown> }; _def?: Record<PropertyKey, unknown> })._zod?.def ??
+    (schema as unknown as { _def?: Record<PropertyKey, unknown> })._def ??
+    ({} as Record<PropertyKey, unknown>));
+
 type StringLiteral<T> = T extends string ? (string extends T ? never : T) : never;
 
 export const genTimestampsSchema = <CrAt = 'createdAt', UpAt = 'updatedAt'>(
@@ -22,8 +27,9 @@ export const genTimestampsSchema = <CrAt = 'createdAt', UpAt = 'updatedAt'>(
   } as {
     [_ in StringLiteral<NonNullable<CrAt | UpAt>>]: z.ZodDate;
   });
-  schema._def[MongooseSchemaOptionsSymbol] = {
-    ...schema._def[MongooseSchemaOptionsSymbol],
+  const def = getInternalDef(schema);
+  def[MongooseSchemaOptionsSymbol] = {
+    ...(def[MongooseSchemaOptionsSymbol] as Record<string, unknown> | undefined),
     timestamps: {
       createdAt: createdAtField == null ? false : createdAtField,
       updatedAt: updatedAtField == null ? false : updatedAtField,

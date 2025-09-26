@@ -9,10 +9,7 @@ module.exports = {
     '^.+.tsx?$': [
       'ts-jest',
       {
-        isolatedModules: true,
-        useESM: true,
-
-        // For `ts-jest-mock-import-meta`:
+        tsconfig: 'tsconfig.jest.json',
         diagnostics: {
           ignoreCodes: [1343],
         },

@@ -30,7 +30,7 @@ describe('Validation', () => {
     ],
     ['enum', z.enum(['a', 'b', 'c']), 'd'],
     ['nativeEnum', z.nativeEnum({a: 1, b: 2, c: 3}), 4],
-    ['record', z.record(z.string()), {a: 1}],
+    ['record', z.record(z.string(), z.string()), {a: 1}],
     ['tuple', z.tuple([z.number(), z.string(), z.date()]), [1, '2', '2022-01-01']],
     [
       'intersection',
@@ -76,7 +76,7 @@ describe('Validation', () => {
     ['union w/ a nullable schema', z.union([z.string().nullable(), z.number()]), null],
     ['enum', z.enum(['a', 'b', 'c']), 'c'],
     ['nativeEnum', z.nativeEnum({a: 1, b: 2, c: 3}), 2],
-    ['record', z.record(z.string()), {a: 'b'}],
+    ['record', z.record(z.string(), z.string()), {a: 'b'}],
     ['tuple', z.tuple([z.number(), z.string(), z.date()]), [1, '2', new Date('2022-01-01')]],
     [
       'intersection',

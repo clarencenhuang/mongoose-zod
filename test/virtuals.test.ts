@@ -18,10 +18,10 @@ describe('Schema virtuals', () => {
       schemaOptions: {
         virtuals: {
           fullName: {
-            get() {
+            get(this: {firstName: string; lastName: string}) {
               return `${this.firstName} ${this.lastName}`;
             },
-            set(fullName: string) {
+            set(this: {firstName: string; lastName: string}, fullName: string) {
               const [fn = '', ln = ''] = fullName.trim().split(' ');
               this.firstName = fn;
               this.lastName = ln;

@@ -186,7 +186,7 @@ describe('Type options provided by mongoose-zod', () => {
         .mongoose({
           typeOptions: {
             email: {
-              mzValidate(value) {
+              mzValidate(this: {registered?: boolean} | undefined, value: string) {
                 return !this || (Boolean(this.registered) && value.endsWith('gmail.com'));
               },
             },
@@ -282,7 +282,7 @@ describe('Type options provided by mongoose-zod', () => {
         .mongoose({
           typeOptions: {
             lastName: {
-              mzRequired() {
+              mzRequired(this: {firstName?: string} | undefined) {
                 return this ? Boolean(this.firstName) : false;
               },
             },

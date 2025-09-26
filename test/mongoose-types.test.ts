@@ -115,7 +115,7 @@ describe('Mongoose types', () => {
         z.object({data: mongooseZodCustomType('Buffer')}).mongoose({
           typeOptions: {
             data: {
-              get: (v) => v,
+              get: (v: Buffer) => v,
             },
           },
         }),
