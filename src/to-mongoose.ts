@@ -325,7 +325,10 @@ const addMongooseSchemaFields = (
       errMsgAddendum = 'enum definition is missing';
     }
 
-    const invalidAnalysis = analyses.find((analysis) => analysis.kind === 'invalid');
+    const invalidAnalysis = analyses.find(
+      (analysis): analysis is Extract<EnumSchemaAnalysis, {kind: 'invalid'}> =>
+        analysis.kind === 'invalid',
+    );
 
     if (!errMsgAddendum && invalidAnalysis) {
       errMsgAddendum = invalidAnalysis.reason;
