@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "name": "mongoose-zod",
   "description": "Create Mongoose schemas using Zod.",
   "scripts": {
@@ -97,7 +97,7 @@
     "zod": "4.1.11"
   },
   "peerDependencies": {
-    "mongoose": "6.13.8",
+    "mongoose": ">=6.13.0",
     "mongoose-lean-defaults": "2.x",
     "mongoose-lean-getters": ">=0.3 <1",
     "mongoose-lean-virtuals": ">=0.9 <1",
