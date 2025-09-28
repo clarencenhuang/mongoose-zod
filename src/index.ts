@@ -17,9 +17,14 @@ export {mongooseZodCustomType} from './zod-helpers.js';
 export {
   MongooseSchemaOptionsSymbol,
   MongooseTypeOptionsSymbol,
-  ZodMongoose,
   toZodMongooseSchema,
   addMongooseTypeOptions,
+  mergeMongooseSchemaOptions,
+  getMongooseSchemaOptions,
+  getMongooseTypeOptions,
+  isZodMongoose,
+  getZodMongooseInternal,
   z,
 } from './extensions.js';
+export type {ZodMongoose} from './extensions.js';
 export {setup} from './setup.js';

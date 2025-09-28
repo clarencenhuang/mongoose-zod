@@ -1,0 +1,14 @@
+{
+  "include": ["src", "test"],
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true
+  }
+}

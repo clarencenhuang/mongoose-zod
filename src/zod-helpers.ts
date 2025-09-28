@@ -5,9 +5,10 @@ import {z} from 'zod';
 import type {ZodSchema, ZodTypeAny} from 'zod';
 import {
   type MongooseMetadata,
-  MongooseSchemaOptionsSymbol,
-  MongooseTypeOptionsSymbol,
-  ZodMongoose,
+  getMongooseSchemaOptions,
+  getMongooseTypeOptions,
+  getZodMongooseInternal,
+  isZodMongoose,
 } from './extensions.js';
 
 export interface ZodTypes {
@@ -15,35 +16,34 @@ export interface ZodTypes {
   ZodArray: z.ZodArray<any>;
   ZodBigInt: z.ZodBigInt;
   ZodBoolean: z.ZodBoolean;
-  ZodBranded: z.ZodBranded<any, any>;
   ZodDate: z.ZodDate;
   ZodDefault: z.ZodDefault<any>;
-  ZodEffects: z.ZodEffects<any>;
   ZodEnum: z.ZodEnum<any>;
   ZodFunction: z.ZodFunction<any, any>;
   ZodIntersection: z.ZodIntersection<any, any>;
   ZodLazy: z.ZodLazy<any>;
   ZodLiteral: z.ZodLiteral<any>;
-  ZodMap: z.ZodMap;
+  ZodMap: z.ZodMap<any, any>;
   ZodNaN: z.ZodNaN;
-  ZodNativeEnum: z.ZodNativeEnum<any>;
   ZodNull: z.ZodNull;
   ZodNullable: z.ZodNullable<any>;
   ZodNumber: z.ZodNumber;
   ZodObject: z.ZodObject<any>;
   ZodOptional: z.ZodOptional<any>;
   ZodUndefined: z.ZodUndefined;
+  ZodNever: z.ZodNever;
   ZodPromise: z.ZodPromise<any>;
-  ZodRecord: z.ZodRecord;
-  ZodSet: z.ZodSet;
-  ZodSchema: z.ZodSchema;
+  ZodRecord: z.ZodRecord<any, any>;
+  ZodSet: z.ZodSet<any>;
   ZodString: z.ZodString;
   ZodTuple: z.ZodTuple<any>;
   ZodUnion: z.ZodUnion<any>;
-  ZodDiscriminatedUnion: z.ZodDiscriminatedUnion<any, any, any>;
+  ZodDiscriminatedUnion: z.ZodDiscriminatedUnion<any, any>;
   ZodUnknown: z.ZodUnknown;
   ZodVoid: z.ZodVoid;
-
+  ZodPipe: z.ZodPipe<any, any>;
+  ZodTransform: z.ZodTransform<any>;
+  ZodCustom: z.ZodTypeAny;
   ZodType: z.ZodType;
   ZodTypeAny: z.ZodTypeAny;
 }
@@ -75,14 +75,14 @@ export const unwrapZodSchema = (
   options: {doNotUnwrapArrays?: boolean} = {},
   _features: SchemaFeatures = {},
 ): {schema: ZodSchema; features: SchemaFeatures} => {
-  const monTypeOptions = schema._def[MongooseTypeOptionsSymbol];
+  const monTypeOptions = getMongooseTypeOptions(schema);
   _features.mongooseTypeOptions ||= monTypeOptions;
-  const monSchemaOptions = schema._def[MongooseSchemaOptionsSymbol];
+  const monSchemaOptions = getMongooseSchemaOptions(schema);
   _features.mongooseSchemaOptions ||= monSchemaOptions;
 
   if (
     isZodType(schema, 'ZodNull') ||
-    (isZodType(schema, 'ZodLiteral') && schema._def.value === null)
+    (isZodType(schema, 'ZodLiteral') && schema._def.values?.includes(null))
   ) {
     _features.isNullable = true;
   }
@@ -120,18 +120,22 @@ export const unwrapZodSchema = (
     }
   }
 
-  if (schema instanceof ZodMongoose) {
-    return unwrapZodSchema(schema._def.innerType, options, {
+  if (isZodMongoose(schema)) {
+    const internal = getZodMongooseInternal(schema);
+    return unwrapZodSchema(internal.innerType, options, {
       ..._features,
-      mongoose: schema._def.mongoose,
+      mongoose: internal.mongoose,
     });
   }
 
   // Remove `strict` or `passthrough` feature - set to strip mode (default)
   if (isZodType(schema, 'ZodObject')) {
-    const unknownKeys = schema._def.unknownKeys as string;
-    if (unknownKeys === 'strict' || unknownKeys === 'passthrough') {
-      return unwrapZodSchema(schema.strip(), options, {..._features, unknownKeys});
+    const {catchall} = schema._def;
+    if (catchall && isZodType(catchall, 'ZodNever')) {
+      return unwrapZodSchema(schema.strip(), options, {..._features, unknownKeys: 'strict'});
+    }
+    if (catchall && isZodType(catchall, 'ZodUnknown')) {
+      return unwrapZodSchema(schema.strip(), options, {..._features, unknownKeys: 'passthrough'});
     }
   }
 
@@ -140,26 +144,20 @@ export const unwrapZodSchema = (
   }
 
   if (isZodType(schema, 'ZodDefault')) {
+    const defaultDef = schema._def.defaultValue;
+    const defaultValue = typeof defaultDef === 'function' ? defaultDef() : defaultDef;
     return unwrapZodSchema(
       schema._def.innerType,
       options,
       // Only top-most default value ends up being used
       // (in case of `<...>.default(1).default(2)`, `2` will be used as the default value)
-      'default' in _features ? _features : {..._features, default: schema._def.defaultValue()},
+      'default' in _features ? _features : {..._features, default: defaultValue},
     );
-  }
-
-  if (isZodType(schema, 'ZodBranded') || isZodType(schema, 'ZodNullable')) {
-    return unwrapZodSchema(schema.unwrap(), options, {..._features});
-  }
-
-  if (isZodType(schema, 'ZodEffects') && schema._def.effect.type === 'refinement') {
-    return unwrapZodSchema(schema._def.schema, options, _features);
   }
 
   if (isZodType(schema, 'ZodArray') && !options.doNotUnwrapArrays) {
     const wrapInArrayTimes = Number(_features.array?.wrapInArrayTimes || 0) + 1;
-    return unwrapZodSchema(schema._def.type, options, {
+    return unwrapZodSchema(schema._def.element, options, {
       ..._features,
       array: {
         ..._features.array,
@@ -176,19 +174,15 @@ export const zodInstanceofOriginalClasses = new WeakMap<ZodTypeAny, new (...args
 
 export const mongooseZodCustomType = <T extends keyof typeof M.Types & keyof typeof M.Schema.Types>(
   typeName: T,
-  params?: Parameters<ZodTypeAny['refine']>[1],
+  params?: Parameters<typeof z.instanceof>[1],
 ) => {
   const instanceClass = typeName === 'Buffer' ? Buffer : M.Types[typeName];
   const typeClass = M.Schema.Types[typeName];
 
   type TFixed = T extends 'Buffer' ? BufferConstructor : (typeof M.Types)[T];
 
-  const result = z.instanceof(instanceClass, params) as z.ZodType<
-    InstanceType<TFixed>,
-    z.ZodTypeDef,
-    InstanceType<TFixed>
-  >;
-  zodInstanceofOriginalClasses.set((result as z.ZodEffects<any>)._def.schema, typeClass);
+  const result = z.instanceof(instanceClass, params) as z.ZodType<InstanceType<TFixed>>;
+  zodInstanceofOriginalClasses.set(result, typeClass);
 
   return result;
 };

@@ -4,6 +4,9 @@ import {z} from 'zod';
 import {mongooseZodCustomType, toMongooseSchema} from '../src/index.js';
 
 describe('Mongoose types', () => {
+  type LeanBufferDoc = {data?: Buffer};
+  type LeanBufferSubDoc = {a: {data: Buffer}};
+
   let mongoServer: MongoMemoryServer;
 
   beforeAll(async () => {
@@ -17,9 +20,9 @@ describe('Mongoose types', () => {
   });
 
   beforeEach(() => {
-    Object.keys(M.connection.models).forEach((modelName) => {
-      delete (M.connection.models as any)[modelName];
-    });
+    for (const modelName of M.connection.modelNames()) {
+      M.deleteModel(modelName);
+    }
   });
 
   it.each([
@@ -86,7 +89,7 @@ describe('Mongoose types', () => {
     expect(docRaw.data).toBeInstanceOf(Buffer);
 
     await docRaw.save();
-    const doc = await Model.findOne({_id: docRaw._id}).lean();
+    const doc = (await Model.findOne({_id: docRaw._id}).lean()) as LeanBufferDoc;
 
     expect(doc?.data).toBeInstanceOf(Buffer);
   });
@@ -103,7 +106,7 @@ describe('Mongoose types', () => {
     expect(docRaw.a.data).toBeInstanceOf(Buffer);
 
     await docRaw.save();
-    const doc = await Model.findOne({_id: docRaw._id}).lean();
+    const doc = (await Model.findOne({_id: docRaw._id}).lean()) as LeanBufferSubDoc;
 
     expect(doc?.a.data).toBeInstanceOf(Buffer);
   });
@@ -115,7 +118,7 @@ describe('Mongoose types', () => {
         z.object({data: mongooseZodCustomType('Buffer')}).mongoose({
           typeOptions: {
             data: {
-              get: (v) => v,
+              get: (v: unknown) => v,
             },
           },
         }),

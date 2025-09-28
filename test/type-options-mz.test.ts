@@ -18,9 +18,9 @@ describe('Type options provided by mongoose-zod', () => {
   });
 
   beforeEach(() => {
-    Object.keys(M.connection.models).forEach((modelName) => {
-      delete (M.connection.models as any)[modelName];
-    });
+    for (const modelName of M.connection.modelNames()) {
+      M.deleteModel(modelName);
+    }
   });
 
   describe('mzValidate', () => {
@@ -34,7 +34,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       new Model({username: 'something'}).validateSync();
 
       expect(validate).toHaveBeenCalled();
@@ -54,7 +54,7 @@ describe('Type options provided by mongoose-zod', () => {
         })
         .mongoose();
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       new Model({user: {username: 'something'}}).validateSync();
 
       expect(validate).toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       new Model({username: 'something'}).validateSync();
 
       expect(validate).toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       const doc = new Model({username: 'something'});
       doc.validateSync();
 
@@ -114,7 +114,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       const doc = new Model({username: 'something'});
       doc.validateSync();
 
@@ -134,7 +134,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
       await Model.updateOne(
         {},
@@ -163,7 +163,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
       await Model.updateOne(
         {},
@@ -186,14 +186,17 @@ describe('Type options provided by mongoose-zod', () => {
         .mongoose({
           typeOptions: {
             email: {
-              mzValidate(value) {
-                return !this || (Boolean(this.registered) && value.endsWith('gmail.com'));
+              mzValidate(this: any, value: string | undefined) {
+                return (
+                  !this ||
+                  (Boolean(this.registered) && typeof value === 'string' && value.endsWith('gmail.com'))
+                );
               },
             },
           },
         });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
       expect(new Model({}).validateSync()).not.toBeInstanceOf(M.Error.ValidationError);
       expect(new Model({email: 'test@gmail.com'}).validateSync()).toBeInstanceOf(
@@ -214,12 +217,12 @@ describe('Type options provided by mongoose-zod', () => {
       const zodSchema = z.object({username: z.string().optional()}).mongoose({
         typeOptions: {
           username: {
-            mzRequired: required,
+            mzRequired: required as any,
           },
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       new Model({username: 'something'}).validateSync();
 
       expect(required).toHaveBeenCalled();
@@ -230,7 +233,7 @@ describe('Type options provided by mongoose-zod', () => {
       const zodSchema = z.object({username: z.string().optional()}).mongoose({
         typeOptions: {
           username: {
-            mzRequired() {
+            mzRequired(this: any) {
               that = this;
               return true;
             },
@@ -238,7 +241,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       const doc = new Model({username: 'something'});
       doc.validateSync();
 
@@ -250,7 +253,7 @@ describe('Type options provided by mongoose-zod', () => {
       const zodSchema = z.object({username: z.string().optional()}).mongoose({
         typeOptions: {
           username: {
-            mzRequired() {
+            mzRequired(this: any) {
               that = this;
               return true;
             },
@@ -258,7 +261,7 @@ describe('Type options provided by mongoose-zod', () => {
         },
       });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
       await Model.updateOne(
         {},
@@ -282,14 +285,14 @@ describe('Type options provided by mongoose-zod', () => {
         .mongoose({
           typeOptions: {
             lastName: {
-              mzRequired() {
+              mzRequired(this: any) {
                 return this ? Boolean(this.firstName) : false;
               },
             },
           },
         });
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
       expect(new Model({username: 'any'}).validateSync()).not.toBeInstanceOf(
         M.Error.ValidationError,

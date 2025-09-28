@@ -7,6 +7,10 @@ import {getSchemaPlugins, importModule} from './shared.js';
 
 const TEST_USERNAME = 'mongoose-zod';
 
+  type LeanUserVirtual = {username?: string; u?: string};
+  type LeanUserGetter = {username?: string};
+  type LeanUserDefaults = {__v?: number};
+
 describe('Plugins', () => {
   let mongoServer: MongoMemoryServer;
 
@@ -21,9 +25,9 @@ describe('Plugins', () => {
   });
 
   beforeEach(() => {
-    Object.keys(M.connection.models).forEach((modelName) => {
-      delete (M.connection.models as any)[modelName];
-    });
+    for (const modelName of M.connection.modelNames()) {
+      M.deleteModel(modelName);
+    }
   });
 
   describe('mongoose-lean-virtuals', () => {
@@ -70,7 +74,7 @@ describe('Plugins', () => {
           schemaOptions: {
             virtuals: {
               u: {
-                get() {
+                get(this: any): string | undefined {
                   return this.username;
                 },
               },
@@ -83,17 +87,19 @@ describe('Plugins', () => {
     it('`mongoose-lean-virtuals` plugin works and does not require specifying "virtuals: true"', async () => {
       await new UserWithVirtual({username: TEST_USERNAME}).save();
       const user = await UserWithVirtual.findOne({username: TEST_USERNAME}).lean();
+      const userVirtual = user as LeanUserVirtual;
 
-      expect(user?.username).toBe(TEST_USERNAME);
-      expect(user?.u).toEqual(user?.username);
+      expect(userVirtual?.username).toBe(TEST_USERNAME);
+      expect(userVirtual?.u).toEqual(userVirtual?.username);
     });
 
     it('Allows to override "virtuals: true" when using .lean()', async () => {
       await new UserWithVirtual({username: TEST_USERNAME}).save();
       const user = await UserWithVirtual.findOne({username: TEST_USERNAME}).lean({virtuals: false});
+      const userVirtual = user as LeanUserVirtual | null;
 
-      expect(user?.username).toBe(TEST_USERNAME);
-      expect(user?.u).toEqual(undefined);
+      expect(userVirtual?.username).toBe(TEST_USERNAME);
+      expect(userVirtual?.u).toEqual(undefined);
     });
   });
 
@@ -217,7 +223,7 @@ describe('Plugins', () => {
         z.object({username: z.string()}).mongoose({
           typeOptions: {
             username: {
-              get(value) {
+              get(value: string) {
                 return value.toUpperCase();
               },
             },
@@ -229,15 +235,17 @@ describe('Plugins', () => {
     it('`mongoose-lean-getters` plugin works and does not require specifying "getters: true"', async () => {
       await new UserWithGetter({username: TEST_USERNAME}).save();
       const user = await UserWithGetter.findOne({username: TEST_USERNAME}).lean();
+      const userGetter = user as LeanUserGetter;
 
-      expect(user?.username).toBe(TEST_USERNAME.toUpperCase());
+      expect(userGetter?.username).toBe(TEST_USERNAME.toUpperCase());
     });
 
     it('Allows to override "getters: true" when using .lean()', async () => {
       await new UserWithGetter({username: TEST_USERNAME}).save();
       const user = await UserWithGetter.findOne({username: TEST_USERNAME}).lean({getters: false});
+      const userGetter = user as LeanUserGetter | null;
 
-      expect(user?.username).toBe(TEST_USERNAME);
+      expect(userGetter?.username).toBe(TEST_USERNAME);
     });
   });
 
@@ -247,15 +255,15 @@ describe('Plugins', () => {
     it('Sets "versionKey: false" when using .lean()', async () => {
       await new User({username: TEST_USERNAME}).save();
       const user = await User.findOne({username: TEST_USERNAME}).lean();
-
-      expect((user as any)?.__v).toBe(undefined);
+      const userDefaults = user as LeanUserDefaults | null;
+      expect(userDefaults?.__v).toBe(undefined);
     });
 
     it('Allows to override "versionKey: false" when using .lean()', async () => {
       await new User({username: TEST_USERNAME}).save();
       const user = await User.findOne({username: TEST_USERNAME}).lean({versionKey: true});
-
-      expect((user as any)?.__v).toBe(0);
+      const userDefaults = user as LeanUserDefaults | null;
+      expect(userDefaults?.__v).toBe(0);
     });
   });
 });

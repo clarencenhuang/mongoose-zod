@@ -1,7 +1,8 @@
 import M from 'mongoose';
 import {z} from 'zod';
 import {MongooseZodError} from './errors.js';
-import {MongooseSchemaOptionsSymbol, type ZodMongoose} from './extensions.js';
+import {mergeMongooseSchemaOptions} from './extensions.js';
+import type {ZodMongoose} from './extensions.js';
 
 type StringLiteral<T> = T extends string ? (string extends T ? never : T) : never;
 
@@ -22,37 +23,21 @@ export const genTimestampsSchema = <CrAt = 'createdAt', UpAt = 'updatedAt'>(
   } as {
     [_ in StringLiteral<NonNullable<CrAt | UpAt>>]: z.ZodDate;
   });
-  schema._def[MongooseSchemaOptionsSymbol] = {
-    ...schema._def[MongooseSchemaOptionsSymbol],
+  mergeMongooseSchemaOptions(schema, {
     timestamps: {
       createdAt: createdAtField == null ? false : createdAtField,
       updatedAt: updatedAtField == null ? false : updatedAtField,
     },
-  };
+  });
   return schema;
 };
 
 export type MongooseSchemaTypeParameters<
   T,
   Parameter extends 'InstanceMethods' | 'QueryHelpers' | 'TStaticMethods' | 'TVirtuals',
-> =
-  T extends ZodMongoose<
-    any,
-    any,
-    infer InstanceMethods,
-    infer QueryHelpers,
-    infer TStaticMethods,
-    infer TVirtuals
-  >
-    ? {
-        InstanceMethods: InstanceMethods;
-        QueryHelpers: QueryHelpers;
-        TStaticMethods: TStaticMethods;
-        TVirtuals: TVirtuals;
-      }[Parameter]
-    : {};
+> = any;
 
-const noCastFn = (value: any) => value;
+const noCastFn = <Value>(value: Value) => value;
 
 export class MongooseZodBoolean extends M.SchemaTypes.Boolean {
   static schemaName = 'MongooseZodBoolean' as 'Boolean';

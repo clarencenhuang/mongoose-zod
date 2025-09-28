@@ -4,27 +4,26 @@ module.exports = {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
-  setupFilesAfterEnv: ['./test/setup.ts'],
+  setupFilesAfterEnv: ['./test/setup.cjs'],
   transform: {
-    '^.+.tsx?$': [
+    '^.+\\.(t|j)sx?$': [
       'ts-jest',
       {
-        isolatedModules: true,
-        useESM: true,
-
-        // For `ts-jest-mock-import-meta`:
+        useESM: false,
+        tsconfig: './tsconfig.jest.json',
         diagnostics: {
           ignoreCodes: [1343],
         },
         astTransformers: {
           before: [
             {
-              path: 'node_modules/ts-jest-mock-import-meta',
+              path: 'ts-jest-mock-import-meta',
             },
           ],
         },
       },
     ],
   },
+  transformIgnorePatterns: ['/node_modules/(?!ts-jest-mock-import-meta)'],
   verbose: false,
 };

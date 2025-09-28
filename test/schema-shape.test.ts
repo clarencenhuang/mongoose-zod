@@ -127,7 +127,7 @@ describe('Schema shape replication', () => {
       z.null(),
       z.any(),
       z.unknown(),
-      z.record(z.number()),
+      z.record(z.string(), z.number()),
       z.tuple([z.string(), z.string(), z.boolean()]),
       z.union([z.string(), z.number().array()]),
       z.intersection(z.string(), z.number()),

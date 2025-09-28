@@ -4,10 +4,15 @@ import {toMongooseSchema} from '../src/index.js';
 
 describe('Schema virtuals', () => {
   beforeEach(() => {
-    Object.keys(M.connection.models).forEach((modelName) => {
-      delete (M.connection.models as any)[modelName];
-    });
+    for (const modelName of M.connection.modelNames()) {
+      M.deleteModel(modelName);
+    }
   });
+
+  interface NameDoc {
+    firstName: string;
+    lastName: string;
+  }
 
   const SCHEMA_WITH_VIRTUALS = z
     .object({
@@ -18,10 +23,10 @@ describe('Schema virtuals', () => {
       schemaOptions: {
         virtuals: {
           fullName: {
-            get() {
+            get(this: NameDoc): string {
               return `${this.firstName} ${this.lastName}`;
             },
-            set(fullName: string) {
+            set(this: NameDoc, fullName: string) {
               const [fn = '', ln = ''] = fullName.trim().split(' ');
               this.firstName = fn;
               this.lastName = ln;
@@ -35,7 +40,8 @@ describe('Schema virtuals', () => {
     const zodSchema = SCHEMA_WITH_VIRTUALS;
 
     const Model = M.model('test', toMongooseSchema(zodSchema));
-    const instance = new Model({firstName: 'A', lastName: 'B'});
+    const instance = new Model({firstName: 'A', lastName: 'B'}) as M.Document &
+      NameDoc & {fullName: string};
 
     expect(instance.fullName).toEqual(`A B`);
 
@@ -49,7 +55,9 @@ describe('Schema virtuals', () => {
     const zodSchema = z.object({name: SCHEMA_WITH_VIRTUALS}).mongoose();
 
     const Model = M.model('test', toMongooseSchema(zodSchema));
-    const instance = new Model({name: {firstName: 'A', lastName: 'B'}});
+    const instance = new Model({name: {firstName: 'A', lastName: 'B'}}) as M.Document & {
+      name: NameDoc & {fullName: string};
+    };
 
     expect(instance.name.fullName).toEqual(`A B`);
 

@@ -4,9 +4,9 @@ import {toMongooseSchema} from '../src/index.js';
 
 describe('Validation', () => {
   beforeEach(() => {
-    Object.keys(M.connection.models).forEach((modelName) => {
-      delete (M.connection.models as any)[modelName];
-    });
+    for (const modelName of M.connection.modelNames()) {
+      M.deleteModel(modelName);
+    }
   });
 
   it.each([
@@ -30,7 +30,7 @@ describe('Validation', () => {
     ],
     ['enum', z.enum(['a', 'b', 'c']), 'd'],
     ['nativeEnum', z.nativeEnum({a: 1, b: 2, c: 3}), 4],
-    ['record', z.record(z.string()), {a: 1}],
+    ['record', z.record(z.string(), z.string()), {a: 1}],
     ['tuple', z.tuple([z.number(), z.string(), z.date()]), [1, '2', '2022-01-01']],
     [
       'intersection',
@@ -53,7 +53,7 @@ describe('Validation', () => {
     (_, propSchema, value) => {
       const zodSchema = z.object({a: propSchema}).mongoose();
 
-      const Model = M.model('test', toMongooseSchema(zodSchema));
+      const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
       const instance = new Model({a: value});
 
       expect(instance.validateSync()).toBeInstanceOf(M.Error.ValidationError);
@@ -76,7 +76,7 @@ describe('Validation', () => {
     ['union w/ a nullable schema', z.union([z.string().nullable(), z.number()]), null],
     ['enum', z.enum(['a', 'b', 'c']), 'c'],
     ['nativeEnum', z.nativeEnum({a: 1, b: 2, c: 3}), 2],
-    ['record', z.record(z.string()), {a: 'b'}],
+    ['record', z.record(z.string(), z.string()), {a: 'b'}],
     ['tuple', z.tuple([z.number(), z.string(), z.date()]), [1, '2', new Date('2022-01-01')]],
     [
       'intersection',
@@ -102,14 +102,14 @@ describe('Validation', () => {
       ],
     ],
     ['any', z.any(), {a: [1, '2', [[]]], b: {c: {d: [42, {e: 'f'}]}}}],
-    ['unknown', z.any(), {a: [1, '2', [[]]], b: {c: {d: [42, {e: 'f'}]}}}],
+    ['unknown', z.unknown(), {a: [1, '2', [[]]], b: {c: {d: [42, {e: 'f'}]}}}],
   ] as const)(
     'Does not throw ValidationError if zod validation succeeds for type "%s"',
     (_, propSchema, value) => {
       const zodSchema = z.object({a: propSchema}).mongoose();
 
       const mongooseSchema = toMongooseSchema(zodSchema);
-      const Model = M.model('test', mongooseSchema);
+      const Model = M.model<z.infer<typeof zodSchema>>('test', mongooseSchema);
       const instance = new Model({a: value});
 
       const validationResult = instance.validateSync();
@@ -135,7 +135,7 @@ describe('Validation', () => {
       })
       .mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
     const instance = new Model({firstName: 'N', nickname: 'nick'});
 
     expect(instance.validateSync()).toBeInstanceOf(M.Error.ValidationError);
@@ -159,7 +159,7 @@ describe('Validation', () => {
       })
       .mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
     const instance = new Model({firstName: 'Nick', nickname: 'nickname'});
 
     expect(instance.validateSync()).not.toBeInstanceOf(M.Error.ValidationError);
@@ -168,7 +168,7 @@ describe('Validation', () => {
   it('Does not perform value casting for numbers', () => {
     const zodSchema = z.object({a: z.number()}).mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
     [
       '1',
@@ -191,7 +191,7 @@ describe('Validation', () => {
   it('Does not perform value casting for strings', () => {
     const zodSchema = z.object({a: z.string()}).mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
     [
       {_id: 'a'},
@@ -214,7 +214,7 @@ describe('Validation', () => {
   it('Does not perform value casting for booleans', () => {
     const zodSchema = z.object({a: z.boolean()}).mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
     // https://github.com/Automattic/mongoose/blob/df01ba6bdff9cae17697b72b0178492237a776bc/lib/cast/boolean.js#L31
     ['true', 1, '1', 'yes', 'false', 0, '0', 'no'].forEach((badValue) => {
@@ -226,7 +226,7 @@ describe('Validation', () => {
   it('Does not perform value casting for dates', () => {
     const zodSchema = z.object({a: z.date()}).mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
     [
       42,
@@ -245,7 +245,7 @@ describe('Validation', () => {
   it('Does not cast non-arrays to arrays by default', () => {
     const zodSchema = z.object({a: z.any().array()}).mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
     [1, '2', false, {}, new Map()].forEach((badValue) => {
       const instance = new Model({a: badValue});
@@ -261,7 +261,7 @@ describe('Validation', () => {
       .strict()
       .mongoose();
 
-    const Model = M.model('test', toMongooseSchema(zodSchema));
+    const Model = M.model<z.infer<typeof zodSchema>>('test', toMongooseSchema(zodSchema));
 
     [1, '2', false, {}, new Map()].forEach((nonArray) => {
       const instance = new Model({a: nonArray});

@@ -2,7 +2,8 @@ import M, {Schema as MongooseSchema, type SchemaOptions, type SchemaTypeOptions}
 import z from 'zod';
 import type {ZodSchema} from 'zod';
 import {MongooseZodError} from './errors.js';
-import {MongooseSchemaOptionsSymbol, ZodMongoose} from './extensions.js';
+import type {ZodMongoose} from './extensions.js';
+import {getMongooseSchemaOptions, getZodMongooseInternal, isZodMongoose} from './extensions.js';
 import {
   type MongooseSchemaTypeParameters,
   MongooseZodBoolean,
@@ -186,7 +187,8 @@ const addMongooseSchemaFields = (
             ...monMetadata.schemaOptions,
           },
         );
-    for (const [key, S] of Object.entries(zodSchemaFinal._def.shape()) as [string, ZodSchema][]) {
+    const shapeEntries = Object.entries(zodSchemaFinal.shape) as [string, ZodSchema][];
+    for (const [key, S] of shapeEntries) {
       addMongooseSchemaFields(S, relevantSchema, {
         ...context,
         fieldsStack: [...fieldsStack, key],
@@ -210,7 +212,11 @@ const addMongooseSchemaFields = (
   } else if (isZodType(zodSchemaFinal, 'ZodBoolean') || unionSchemaType === 'ZodBoolean') {
     fieldType = MongooseZodBoolean;
   } else if (isZodType(zodSchemaFinal, 'ZodLiteral')) {
-    const literalValue = zodSchemaFinal._def.value;
+    const literalValues = zodSchemaFinal._def.values ?? [];
+    if (literalValues.length !== 1) {
+      errMsgAddendum = 'multiple literal values are not supported';
+    }
+    const literalValue = literalValues[0];
     const literalJsType = typeof literalValue;
     switch (literalJsType) {
       case 'boolean': {
@@ -241,36 +247,38 @@ const addMongooseSchemaFields = (
       }
     }
   } else if (isZodType(zodSchemaFinal, 'ZodEnum')) {
-    const enumValues = zodSchemaFinal._def.values;
-    if (
-      Array.isArray(enumValues) &&
-      enumValues.length > 0 &&
-      enumValues.every((v) => typeof v === 'string')
-    ) {
+    const entries = zodSchemaFinal.enum || {};
+    const hasNativeEnumShape = Object.entries(entries).some(([key, value]) => {
+      if (typeof value === 'string' || typeof value === 'number') {
+        return String(value) !== key;
+      }
+      return true;
+    });
+    const rawOptions = (zodSchemaFinal as any).options;
+    const enumValues = hasNativeEnumShape
+      ? getValidEnumValues(entries)
+      : Array.isArray(rawOptions)
+        ? [...rawOptions]
+        : getValidEnumValues(entries);
+    if (!Array.isArray(enumValues) || enumValues.length === 0) {
+      errMsgAddendum = 'enum must contain at least one value';
+    } else if (enumValues.every((v) => typeof v === 'string')) {
       fieldType = MongooseZodString;
-    } else {
-      errMsgAddendum = 'only nonempty zod enums with string values are supported';
-    }
-  } else if (isZodType(zodSchemaFinal, 'ZodNativeEnum')) {
-    const enumValues = getValidEnumValues(zodSchemaFinal._def.values);
-    const valuesJsTypes = [...new Set(enumValues.map((v) => typeof v))];
-    if (valuesJsTypes.length === 1 && valuesJsTypes[0] === 'number') {
+    } else if (enumValues.every((v) => typeof v === 'number')) {
       fieldType = MongooseZodNumber;
-    } else if (valuesJsTypes.length === 1 && valuesJsTypes[0] === 'string') {
-      fieldType = MongooseZodString;
-    } else if (
-      valuesJsTypes.length === 2 &&
-      (['string', 'number'] as const).every((t) => valuesJsTypes.includes(t))
-    ) {
-      fieldType = MongooseMixed;
     } else {
-      errMsgAddendum = 'only nonempty native enums with number and strings values are supported';
+      if (hasNativeEnumShape && enumValues.every((v) => ['string', 'number'].includes(typeof v))) {
+        fieldType = MongooseMixed;
+      } else {
+        errMsgAddendum =
+          'only nonempty zod enums with values of a single primitive type (string or number) are supported';
+      }
     }
   } else if (isZodType(zodSchema, 'ZodNaN') || isZodType(zodSchema, 'ZodNull')) {
     fieldType = MongooseMixed;
   } else if (isZodType(zodSchemaFinal, 'ZodMap')) {
     fieldType = Map;
-  } else if (isZodType(zodSchemaFinal, 'ZodAny')) {
+  } else if (isZodType(zodSchemaFinal, 'ZodAny') || isZodType(zodSchemaFinal, 'ZodCustom')) {
     const instanceOfClass = zodInstanceofOriginalClasses.get(zodSchemaFinal);
     fieldType = instanceOfClass || MongooseMixed;
     // When using .lean(), it returns the inner representation of buffer fields, i.e.
@@ -278,11 +286,8 @@ const addMongooseSchemaFields = (
     if (instanceOfClass === M.Schema.Types.Buffer && !('get' in commonFieldOptions)) {
       commonFieldOptions.get = bufferMongooseGetter;
     }
-  } else if (isZodType(zodSchemaFinal, 'ZodEffects')) {
-    // `refinement` effects are already unwrapped at this stage
-    if (zodSchemaFinal._def.effect.type !== 'refinement') {
-      errMsgAddendum = 'only refinements are supported';
-    }
+  } else if (isZodType(zodSchemaFinal, 'ZodPipe') || isZodType(zodSchemaFinal, 'ZodTransform')) {
+    errMsgAddendum = 'only refinements are supported';
   } else if (
     isZodType(zodSchemaFinal, 'ZodUnknown') ||
     isZodType(zodSchemaFinal, 'ZodRecord') ||
@@ -345,13 +350,17 @@ const addMongooseSchemaFields = (
       schemaToValidate = z.nullable(schemaToValidate);
     }
 
-    const valueToParse =
+    let valueToParse =
       value &&
       typeof value === 'object' &&
       'toObject' in value &&
       typeof value.toObject === 'function'
         ? value.toObject()
         : value;
+
+    if (valueToParse instanceof M.mongo.Binary) {
+      valueToParse = valueToParse.buffer;
+    }
 
     schemaToValidate.parse(valueToParse);
 
@@ -368,11 +377,11 @@ const ALL_PLUGINS_DISABLED: Record<keyof DisableablePlugins, true> = {
   leanVirtuals: true,
 };
 
-export const toMongooseSchema = <Schema extends ZodMongoose<any, any>>(
-  rootZodSchema: Schema,
+export const toMongooseSchema = (
+  rootZodSchema: ZodMongoose,
   options: ToMongooseSchemaOptions = {},
 ) => {
-  if (!(rootZodSchema instanceof ZodMongoose)) {
+  if (!isZodMongoose(rootZodSchema)) {
     throw new MongooseZodError('Root schema must be an instance of ZodMongoose');
   }
 
@@ -390,22 +399,17 @@ export const toMongooseSchema = <Schema extends ZodMongoose<any, any>>(
 
   const {disablePlugins: dp, unknownKeys} = optionsFinal;
 
-  const metadata = rootZodSchema._def;
-  const schemaOptionsFromField = metadata.innerType._def?.[MongooseSchemaOptionsSymbol];
-  const {schemaOptions} = metadata.mongoose;
+  const internal = getZodMongooseInternal(rootZodSchema);
+  const schemaOptionsFromField = internal.innerType
+    ? getMongooseSchemaOptions(internal.innerType)
+    : undefined;
+  const {schemaOptions = {}} = internal.mongoose;
 
   const addMLVPlugin = mlvPlugin && !isPluginDisabled('leanVirtuals', dp);
   const addMLDPlugin = mldPlugin && !isPluginDisabled('leanDefaults', dp);
   const addMLGPlugin = mlgPlugin && !isPluginDisabled('leanGetters', dp);
 
-  const schema = new MongooseSchema<
-    z.infer<Schema>,
-    any,
-    MongooseSchemaTypeParameters<Schema, 'InstanceMethods'>,
-    MongooseSchemaTypeParameters<Schema, 'QueryHelpers'>,
-    Partial<MongooseSchemaTypeParameters<Schema, 'TVirtuals'>>,
-    MongooseSchemaTypeParameters<Schema, 'TStaticMethods'>
-  >(
+  const schema = new MongooseSchema(
     {},
     {
       id: false,
@@ -430,8 +434,8 @@ export const toMongooseSchema = <Schema extends ZodMongoose<any, any>>(
         },
         ...schemaOptions?.query,
       },
-    },
-  );
+    } as SchemaOptions,
+  ) as MongooseSchema<any, any, any, any, any, any>;
 
   addMongooseSchemaFields(rootZodSchema, schema, {monSchemaOptions: schemaOptions, unknownKeys});
 

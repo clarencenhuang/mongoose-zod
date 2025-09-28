@@ -3,6 +3,14 @@ import M from 'mongoose';
 import {z} from 'zod';
 import {MongooseZodError, genTimestampsSchema, toMongooseSchema} from '../src/index.js';
 
+type TimestampDoc = M.Document & {
+  createdAt: Date;
+  updatedAt: Date;
+  cd?: Date;
+  ud?: Date;
+  username?: string;
+};
+
 describe('Generate timestamps schema helper', () => {
   let mongoServer: MongoMemoryServer;
 
@@ -17,9 +25,9 @@ describe('Generate timestamps schema helper', () => {
   });
 
   beforeEach(() => {
-    Object.keys(M.connection.models).forEach((modelName) => {
-      delete (M.connection.models as any)[modelName];
-    });
+    for (const modelName of M.connection.modelNames()) {
+      M.deleteModel(modelName);
+    }
   });
 
   it('Does not include `createdAt`/`updatedAt` fields if both arguments are set to null', () => {
@@ -51,7 +59,7 @@ describe('Generate timestamps schema helper', () => {
 
     const Model = M.model('model', Schema);
 
-    const doc = new Model();
+    const doc = new Model() as TimestampDoc;
     await doc.save();
 
     expect(doc.createdAt).toBeInstanceOf(Date);
@@ -64,12 +72,12 @@ describe('Generate timestamps schema helper', () => {
 
     const Model = M.model('model', Schema);
 
-    const doc = new Model();
+    const doc = new Model() as TimestampDoc;
     await doc.save();
 
-    expect(doc.cd).toBeInstanceOf(Date);
-    expect(doc.ud).toBeInstanceOf(Date);
-    expect(doc.cd.getTime() / 1000).toBeCloseTo(doc.ud.getTime() / 1000, 2);
+    expect(doc.cd!).toBeInstanceOf(Date);
+    expect(doc.ud!).toBeInstanceOf(Date);
+    expect(doc.cd!.getTime() / 1000).toBeCloseTo(doc.ud!.getTime() / 1000, 2);
     expect((doc as any).createdAt).toBeUndefined();
     expect((doc as any).uptdatedAt).toBeUndefined();
   });
@@ -109,12 +117,15 @@ describe('Generate timestamps schema helper', () => {
 
     const Model = M.model('model', Schema);
 
-    const doc = new Model({username: 'mongo'});
+    const doc = new Model({username: 'mongo'}) as TimestampDoc;
     await doc.save();
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const doc2 = (await Model.findOne({_id: doc._id}))!;
+    const doc2 = (await Model.findOne({_id: doc._id})) as TimestampDoc | null;
+    expect(doc2).not.toBeNull();
+    if (!doc2) {
+      throw new Error('Document not found');
+    }
     doc2.username = 'mongoose';
-    await expect(doc2.save()).toResolve();
+    await expect(doc2.save()).resolves.toBeDefined();
   });
 });
