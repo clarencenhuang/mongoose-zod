@@ -10,8 +10,8 @@ export const getValidEnumValues = (obj: any) => {
   return Object.values(filtered);
 };
 
-export const tryImportModule = (id: string, importMeta: ImportMeta): {module: any} | null => {
-  const require = createRequire(new URL(importMeta.url));
+export const tryImportModule = (id: string, importerUrl: string): {module: any} | null => {
+  const require = createRequire(importerUrl);
   try {
     const modulePath = require.resolve(id);
     // eslint-disable-next-line import/no-dynamic-require

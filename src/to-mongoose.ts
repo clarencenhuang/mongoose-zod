@@ -29,9 +29,9 @@ const originalMongooseLean = M.Query.prototype.lean;
 
 registerCustomMongooseZodTypes();
 
-const mlvPlugin = tryImportModule('mongoose-lean-virtuals', import.meta);
-const mldPlugin = tryImportModule('mongoose-lean-defaults', import.meta);
-const mlgPlugin = tryImportModule('mongoose-lean-getters', import.meta);
+const mlvPlugin = tryImportModule('mongoose-lean-virtuals', import.meta.url);
+const mldPlugin = tryImportModule('mongoose-lean-defaults', import.meta.url);
+const mlgPlugin = tryImportModule('mongoose-lean-getters', import.meta.url);
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 const getFixedOptionFn = (fn: Function) =>
